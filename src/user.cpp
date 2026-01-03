@@ -6,30 +6,39 @@ User::User(SafeQueue<std::string> &inQ, SafeQueue<std::string> &outQ,
     : incoming(inQ), outgoing(outQ), name(name) {
 
   std::random_device rd;
-  private_key =
-      ((uint64_t)rd() << 32) | rd();          // combine two 32-bit rd() outputs
-  public_key = ((uint64_t)rd() << 32) | rd(); // combine two 32-bit rd() outputs
+  private_key = rd();
+  public_key = rd();
 
   shared_key = -1;
+  std::cout << name + ": Private Key: " + std::to_string(private_key) +
+                   ", Public Key: " + std::to_string(public_key) + "\n";
 }
 
-BigInt User::generate_shared_key(BigInt a) {
-  BigInt y = pow(g.to_string(), a.to_int()) % n;
-  return y;
-}
+BigInt User::generate_shared_key(BigInt base, uint32_t exp, const BigInt &mod) {
+  BigInt result = 1;
+  base %= mod;
 
-void User::run() {
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  std::uniform_int_distribution<> dist(1, 5000);
+  while (exp > 0) {
+    if (exp & 1)
+      result = (result * base) % mod;
 
-  while (true) {
-    int random_number = dist(gen);
-    std::cout << name + ", wait: " + std::to_string(random_number) << '\n';
-    std::string message = name + ": Hello World";
-    outgoing.push(message);
-    std::string received = incoming.pop();
-    std::cout << received << '\n';
-    std::this_thread::sleep_for(std::chrono::milliseconds(random_number));
+    base = (base * base) % mod;
+    exp >>= 1;
   }
+
+  return result;
+}
+
+void User::run(bool sender) {
+  BigInt intermediate_key_in;
+  BigInt generated_shared_key = generate_shared_key(g, private_key, n);
+  if (sender) {
+    outgoing.push(generated_shared_key.to_string());
+    intermediate_key_in = BigInt(incoming.pop());
+  } else {
+    intermediate_key_in = BigInt(incoming.pop());
+    outgoing.push(generated_shared_key.to_string());
+  }
+  shared_key = generate_shared_key(intermediate_key_in, private_key, n);
+  std::cout << "Shared key " + name + ": " + shared_key.to_string() << '\n';
 }
